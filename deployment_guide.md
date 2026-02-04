@@ -10,7 +10,8 @@ Esta guía te permite publicar tu aplicación en internet para que otros usuario
 4.  Ponle un nombre (ej: "Macbook Upload").
 5.  En **Expiration**, selecciona "No expiration" o 90 días.
 6.  **¡IMPORTANTE!** Marca la casilla **`repo`** (Full control of private repositories).
-7.  Baja al final y pulsa **"Generate token"**.
+7.  **¡IMPORTANTE TAMBIÉN!** Marca la casilla **`workflow`** (para poder subir el archivo de automatización).
+8.  Baja al final y pulsa **"Generate token"**.
 8.  **COPIA ESE CÓDIGO LARGO** (empieza por `ghp_...`). Esa es tu nueva "contraseña".
 9.  Sube tu código actual:
     *(Abre tu terminal en la carpeta del proyecto y ejecuta)*:
