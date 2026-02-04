@@ -28,9 +28,8 @@ function formatNumber(num: number | null | undefined): string {
   return parts.join(',');
 }
 
-export default function CertidumbreView({ data, analisisVersion, contratoVersion, costeVersion, coefK }: CertidumbreViewProps) {
+export default function CertidumbreView({ data, contratoVersion, costeVersion, coefK }: CertidumbreViewProps) {
   const [certidumbreData, setCertidumbreData] = useState<CertidumbreData[]>([]);
-  const [totalContrato, setTotalContrato] = useState<number>(0);
   const [totalVenta, setTotalVenta] = useState<number>(0);
 
   useEffect(() => {
@@ -107,7 +106,6 @@ export default function CertidumbreView({ data, analisisVersion, contratoVersion
     }
 
     setCertidumbreData(resultado);
-    setTotalContrato(sumaContrato);
     setTotalVenta(sumaVenta);
   };
 

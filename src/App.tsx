@@ -630,6 +630,10 @@ export default function App() {
           />
         )}
       </main>
+
+      <div className="fixed bottom-4 right-4 bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-slate-200 text-xs font-medium text-slate-500 z-50">
+        by Javier García
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronRight, ChevronDown, Download } from 'lucide-react';
-import { fetchAnalisisDetallado, fetchPlanificacionData, AnalisisDetallado, PlanificacionData } from '../lib/supabase';
+import { fetchAnalisisDetallado, fetchPlanificacionData, AnalisisDetallado } from '../lib/supabase';
 
 interface AnalisisPlanificacionProps {
   codObra: string;
@@ -28,21 +28,16 @@ interface MonthColumn {
   dateLabel: string;
 }
 
-interface ColumnWidths {
-  codigo: number;
-  nat: number;
-  descripcion: number;
-  ud: number;
-  usertext: number;
-  valorTotal: number;
-  medVenta: number;
-  fechaInicio: number;
-  fechaFin: number;
-  duracDias: number;
-  duracMes: number;
-  rtoDias: number;
-  month: number;
-}
+// Fixed column keys for Strict Order
+const FIXED_COLUMN_KEYS = [
+  'codigo', 'nat', 'descripcion', 'ud', 'usertext',
+  'medVenta', 'fechaInicio', 'fechaFin',
+  'duracDias', 'duracMes', 'rtoDias'
+] as const;
+
+type FixedColumnKey = typeof FIXED_COLUMN_KEYS[number];
+
+type ColumnWidths = Record<FixedColumnKey, number> & { month: number };
 
 function buildTree(items: AnalisisDetallado[]): TreeNode[] {
   const itemMap = new Map<string, TreeNode>();
@@ -96,7 +91,7 @@ function getWorkingDaysInMonth(year: number, month: number, startDate?: Date, en
   const isEndDateInMonth = endDate && endDate.getFullYear() === year && endDate.getMonth() === month;
 
   if (startDate && endDate && startDate.toDateString() === endDate.toDateString() &&
-      startDate.getFullYear() === year && startDate.getMonth() === month) {
+    startDate.getFullYear() === year && startDate.getMonth() === month) {
     const dayOfWeek = startDate.getDay();
     return (dayOfWeek !== 0 && dayOfWeek !== 6) ? 1 : 0;
   }
@@ -104,8 +99,8 @@ function getWorkingDaysInMonth(year: number, month: number, startDate?: Date, en
   const lastDay = isEndDateInMonth && isLastMonth
     ? endDate.getDate() - 1
     : isEndDateInMonth
-    ? endDate.getDate()
-    : new Date(year, month + 1, 0).getDate();
+      ? endDate.getDate()
+      : new Date(year, month + 1, 0).getDate();
 
   let workingDays = 0;
   for (let day = firstDay; day <= lastDay; day++) {
@@ -221,10 +216,12 @@ function formatDate(date: Date | null | undefined): string {
 }
 
 function calculateDurationDays(start: Date | null | undefined, end: Date | null | undefined): number {
-  if (!start || !end) return 0;
-  const diffTime = end.getTime() - start.getTime();
-  const days = Math.round(diffTime / (1000 * 60 * 60 * 24));
-  return days;
+  if (start && end) {
+    const diffTime = end.getTime() - start.getTime();
+    const days = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    return days;
+  }
+  return 0;
 }
 
 function calculateDurationMonths(days: number): number {
@@ -245,6 +242,73 @@ function getOverlapDays(startDate: Date, endDate: Date, monthStart: Date, monthE
   return days > 0 ? days : 0;
 }
 
+function ResizableHeader({
+  children,
+  columnKey,
+  columnWidths,
+  onResize,
+  className = '',
+  style = {},
+  ...props
+}: {
+  children: React.ReactNode;
+  columnKey: keyof ColumnWidths;
+  columnWidths: ColumnWidths;
+  onResize: (key: any, width: number) => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const [isResizing, setIsResizing] = useState(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    startX.current = e.clientX;
+    startWidth.current = (columnWidths as any)[columnKey];
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - startX.current;
+      const newWidth = Math.max(40, startWidth.current + diff);
+      onResize(columnKey, newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, columnKey, onResize]);
+
+  return (
+    <th
+      className={`relative ${className}`}
+      style={{ ...style }}
+      {...props}
+    >
+      {children}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 group z-50"
+        onMouseDown={handleMouseDown}
+      >
+        <div className="w-1 h-full group-hover:bg-blue-500 transition-colors" />
+      </div>
+    </th>
+  );
+}
+
 interface TreeNodeRowProps {
   node: TreeNode;
   level: number;
@@ -260,7 +324,7 @@ interface TreeNodeRowProps {
   columnWidths: ColumnWidths;
   expandedNodes: Set<string>;
   onToggleNode: (nodeId: string) => void;
-  parentNode?: TreeNode;
+  leftPositions: Record<FixedColumnKey, number>;
 }
 
 function TreeNodeRow({
@@ -278,7 +342,7 @@ function TreeNodeRow({
   columnWidths,
   expandedNodes,
   onToggleNode,
-  parentNode
+  leftPositions
 }: TreeNodeRowProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedNodes.has(node.Guid_SGI);
@@ -329,7 +393,8 @@ function TreeNodeRow({
   return (
     <>
       <tr className={`border-b border-slate-200 hover:bg-slate-50 ${getBgColor()}`}>
-        <td className={`py-1 px-2 text-xs border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky left-0 z-10`} style={{ paddingLeft: `${indentWidth + 8}px`, width: `${columnWidths.codigo}px` }}>
+        {/* CODIGO */}
+        <td className={`py-1 px-2 text-xs border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.codigo}px`, width: `${columnWidths.codigo}px`, paddingLeft: `${indentWidth + 8}px` }}>
           <div className="flex items-center">
             {hasChildren ? (
               <button onClick={() => onToggleNode(node.Guid_SGI)} className="mr-1 hover:bg-slate-300 rounded p-0.5">
@@ -341,17 +406,38 @@ function TreeNodeRow({
             <span className={`font-medium font-mono text-[10px] ${getTextColor() || 'text-slate-700'}`}>{node.codigo}</span>
           </div>
         </td>
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getTextColor() || 'text-slate-600'} ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo}px`, width: `${columnWidths.nat}px` }}>{node.nat}</td>
-        <td className={`py-1 px-2 text-xs border-r border-slate-200 ${getTextColor() || 'text-slate-900'} ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat}px`, width: `${columnWidths.descripcion}px` }}>{node.resumen}</td>
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 text-slate-600 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion}px`, width: `${columnWidths.ud}px` }}>{node.ud}</td>
-        <td className={`py-1 px-2 text-[10px] border-r border-slate-200 text-slate-600 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud}px`, width: `${columnWidths.usertext}px` }}>{node.UserText}</td>
-        <td className={`py-1 px-2 text-xs text-right font-mono border-r border-slate-200 ${getBgColor() || 'bg-white'} bg-yellow-50 sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext}px`, width: `${columnWidths.medVenta}px` }}>{formatNumber(baseValue)}</td>
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta}px`, width: `${columnWidths.fechaInicio}px` }}>{formatDate(dates?.comienzo)}</td>
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio}px`, width: `${columnWidths.fechaFin}px` }}>{formatDate(dates?.fin)}</td>
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin}px`, width: `${columnWidths.duracDias}px` }}>{durationDays > 0 ? durationDays : ''}</td>
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin + columnWidths.duracDias}px`, width: `${columnWidths.duracMes}px` }}>{durationMonths > 0 ? formatNumber(durationMonths) : ''}</td>
-        <td className={`py-1 px-2 text-xs text-right font-mono border-r-2 border-slate-400 ${getBgColor() || 'bg-white'} sticky z-10`} style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin + columnWidths.duracDias + columnWidths.duracMes}px`, width: `${columnWidths.rtoDias}px` }}>{rtoDias > 0 ? formatNumber(rtoDias) : ''}</td>
 
+        {/* NAT */}
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getTextColor() || 'text-slate-600'} ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.nat}px`, width: `${columnWidths.nat}px` }}>{node.nat}</td>
+
+        {/* DESCRIPCION */}
+        <td className={`py-1 px-2 text-xs border-r border-slate-200 ${getTextColor() || 'text-slate-900'} ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.descripcion}px`, width: `${columnWidths.descripcion}px` }}>{node.resumen}</td>
+
+        {/* UD */}
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 text-slate-600 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.ud}px`, width: `${columnWidths.ud}px` }}>{node.ud}</td>
+
+        {/* USERTEXT */}
+        <td className={`py-1 px-2 text-[10px] border-r border-slate-200 text-slate-600 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.usertext}px`, width: `${columnWidths.usertext}px` }}>{node.UserText}</td>
+
+        {/* IMPORTE / CANTIDAD */}
+        <td className={`py-1 px-2 text-xs text-right font-mono border-r border-slate-200 ${getBgColor() || 'bg-white'} bg-yellow-50 sticky z-40`} style={{ left: `${leftPositions.medVenta}px`, width: `${columnWidths.medVenta}px` }}>{formatNumber(baseValue)}</td>
+
+        {/* FECHA INICIO */}
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.fechaInicio}px`, width: `${columnWidths.fechaInicio}px` }}>{formatDate(dates?.comienzo)}</td>
+
+        {/* FECHA FIN */}
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.fechaFin}px`, width: `${columnWidths.fechaFin}px` }}>{formatDate(dates?.fin)}</td>
+
+        {/* DURAC DIAS */}
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.duracDias}px`, width: `${columnWidths.duracDias}px` }}>{durationDays > 0 ? durationDays : ''}</td>
+
+        {/* DURAC MES */}
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.duracMes}px`, width: `${columnWidths.duracMes}px` }}>{durationMonths > 0 ? formatNumber(durationMonths) : ''}</td>
+
+        {/* RTO DIAS */}
+        <td className={`py-1 px-2 text-xs text-right font-mono border-r-2 border-slate-400 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.rtoDias}px`, width: `${columnWidths.rtoDias}px` }}>{rtoDias > 0 ? formatNumber(rtoDias) : ''}</td>
+
+        {/* MONTHS */}
         {monthlyValues.map((value, idx) => (
           <td key={idx} className={`py-1 px-2 text-xs text-right font-mono border-r border-blue-200 ${getBgColor() || 'bg-blue-50'}`} style={{ width: `${columnWidths.month}px` }}>
             {value > 0 ? formatNumber(value) : ''}
@@ -378,7 +464,7 @@ function TreeNodeRow({
               columnWidths={columnWidths}
               expandedNodes={expandedNodes}
               onToggleNode={onToggleNode}
-              parentNode={node}
+              leftPositions={leftPositions}
             />
           ))}
         </>
@@ -404,13 +490,14 @@ export default function AnalisisPlanificacion({
   const [sourceVersion, setSourceVersion] = useState<number>(0);
   const [valueType, setValueType] = useState<ValueType>('importe');
   const [monthColumns, setMonthColumns] = useState<MonthColumn[]>([]);
+
+  // Initial standard widths - will be adjusted on load
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>({
     codigo: 120,
     nat: 50,
     descripcion: 250,
     ud: 40,
     usertext: 100,
-    valorTotal: 90,
     medVenta: 90,
     fechaInicio: 70,
     fechaFin: 70,
@@ -420,13 +507,49 @@ export default function AnalisisPlanificacion({
     month: 90
   });
 
+  const handleResize = (key: FixedColumnKey | 'month', width: number) => {
+    setColumnWidths(prev => ({ ...prev, [key]: width }));
+  };
+
+  useEffect(() => {
+    // Force 50/50 split on mount
+    const updateLayout = () => {
+      const halfScreen = window.innerWidth / 2;
+
+      // Calculate total width of fixed columns excluding descripcion
+      let fixedWithoutDesc = 0;
+      FIXED_COLUMN_KEYS.forEach(key => {
+        if (key !== 'descripcion') {
+          fixedWithoutDesc += columnWidths[key];
+        }
+      });
+
+      // Descripcion fills the rest of the half screen
+      // Minimum 150px to prevent breaking
+      const newDescWidth = Math.max(150, halfScreen - fixedWithoutDesc);
+
+      // Apply change only if significant
+      if (Math.abs(columnWidths.descripcion - newDescWidth) > 5) {
+        setColumnWidths(prev => ({ ...prev, descripcion: newDescWidth }));
+      }
+    };
+
+    updateLayout();
+    window.addEventListener('resize', updateLayout);
+    return () => window.removeEventListener('resize', updateLayout);
+  }, [
+    // Re-run if any OTHER column size changes, to keep the 50/50 split
+    columnWidths.codigo, columnWidths.nat, columnWidths.ud, columnWidths.usertext,
+    columnWidths.medVenta, columnWidths.fechaInicio, columnWidths.fechaFin,
+    columnWidths.duracDias, columnWidths.duracMes, columnWidths.rtoDias
+  ]);
+
   useEffect(() => {
     loadData();
   }, [codObra, analisisVersion, coefK]);
 
   useEffect(() => {
     const newExpanded = new Set<string>();
-
     function expandToLevel(nodes: TreeNode[], currentLevel: number) {
       nodes.forEach(node => {
         if (node.children.length > 0 && currentLevel < expandLevel) {
@@ -435,7 +558,6 @@ export default function AnalisisPlanificacion({
         }
       });
     }
-
     expandToLevel(data, 0);
     setExpandedNodes(newExpanded);
   }, [expandLevel, data]);
@@ -460,7 +582,11 @@ export default function AnalisisPlanificacion({
         fetchPlanificacionData(codObra)
       ]);
 
-      const tree = buildTree(analisisData);
+      const filteredAnalisisData = analisisData.filter(item =>
+        !['Material', 'Mano de obra', 'Maquinaria', 'Otros'].includes(item.nat)
+      );
+
+      const tree = buildTree(filteredAnalisisData);
       setData(tree);
 
       const planMap = new Map<string, { comienzo: Date; fin: Date }>();
@@ -560,8 +686,9 @@ export default function AnalisisPlanificacion({
   const totals = useMemo(() => calculateTotals(), [data, planData, dataSource, sourceVersion, valueType, coefK, monthColumns]);
 
   const exportToExcel = () => {
+    // ... exact export logic ...
+    // Keeping it brief for this artifact update
     let csvContent = '\uFEFF';
-
     csvContent += 'Código;Nat.;Descripción;UD;UserText;' + getValueColumnHeader() + ';';
     csvContent += 'Fecha Inicio;Fecha Fin;Durac.dias;Durac.mes;Rto/dias;';
     monthColumns.forEach(col => {
@@ -581,13 +708,11 @@ export default function AnalisisPlanificacion({
     const addRowToCSV = (node: TreeNode, level: number = 0) => {
       const versionKey = `${dataSource === 'contrato' ? 'Contrato' : 'Coste'}_v${sourceVersion}`;
       let baseValue = 0;
-
       if (valueType === 'cantidad') {
         baseValue = parseFloat((node as any)[`${versionKey}_cant`]) || 0;
       } else {
         baseValue = parseFloat((node as any)[`${versionKey}_importe`]) || 0;
       }
-
       const planInfo = planData.get(node.plan_guid);
       const fechaInicio = planInfo?.comienzo ? formatDate(planInfo.comienzo) : '';
       const fechaFin = planInfo?.fin ? formatDate(planInfo.fin) : '';
@@ -595,7 +720,7 @@ export default function AnalisisPlanificacion({
       const duracMes = duracDias > 0 ? (duracDias / 30).toFixed(2) : '';
       const rtoDias = duracDias > 0 ? (baseValue / duracDias).toFixed(2) : '';
 
-      csvContent += `${escapeCsv(node.codigo)};${escapeCsv(node.nat)};${escapeCsv(node.resumen)};${escapeCsv(node.ud)};${escapeCsv(node.usertext)};`;
+      csvContent += `${escapeCsv(node.codigo)};${escapeCsv(node.nat)};${escapeCsv(node.resumen)};${escapeCsv(node.ud)};${escapeCsv(node.UserText)};`;
       csvContent += `${formatNumber(baseValue)};`;
       csvContent += `${fechaInicio};${fechaFin};${duracDias};${duracMes};${rtoDias};`;
 
@@ -603,37 +728,29 @@ export default function AnalisisPlanificacion({
         const monthKey = `${col.year}-${String(col.month).padStart(2, '0')}`;
         let monthValue = 0;
         const nodeMonthValue = (node as any)[monthKey];
-
         if (nodeMonthValue !== undefined && nodeMonthValue !== null) {
           monthValue = parseFloat(nodeMonthValue) || 0;
         } else if (planInfo) {
           const monthStart = new Date(col.year, col.month - 1, 1);
           const monthEnd = new Date(col.year, col.month, 0);
           const overlapDays = getOverlapDays(planInfo.comienzo, planInfo.fin, monthStart, monthEnd);
-
           if (overlapDays > 0 && duracDias > 0) {
             monthValue = (baseValue / duracDias) * overlapDays;
           }
         }
-
         csvContent += `${formatNumber(monthValue)};`;
       });
-
       csvContent += '\n';
-
       node.children.forEach(child => addRowToCSV(child, level + 1));
     };
 
     data.forEach(node => addRowToCSV(node));
-
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-
     const now = new Date();
     const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
     const fileName = `analisis_planificacion_${timestamp}.csv`;
-
     link.setAttribute('href', url);
     link.setAttribute('download', fileName);
     link.style.visibility = 'hidden';
@@ -652,6 +769,18 @@ export default function AnalisisPlanificacion({
       </div>
     );
   }
+
+  // Pre-calculate Left Positions for one-pass read
+  // We use FIXED_COLUMN_KEYS to guarantee order
+  const leftPositions = {} as Record<FixedColumnKey, number>;
+  let currentLeft = 0;
+  FIXED_COLUMN_KEYS.forEach(key => {
+    leftPositions[key] = currentLeft;
+    currentLeft += columnWidths[key];
+  });
+
+  const fixedColumnsTotalWidth = currentLeft;
+  const totalTableWidth = fixedColumnsTotalWidth + (monthColumns.length * columnWidths.month);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
@@ -730,23 +859,23 @@ export default function AnalisisPlanificacion({
       </div>
 
       <div className="overflow-x-auto overflow-y-auto h-[calc(100vh-280px)]">
-        <table className="border-collapse w-full">
-          <thead className="sticky top-0 z-20">
-            <tr className="border-b-2 border-slate-300">
-              <th className="bg-slate-100 py-2 px-2 text-left text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky left-0 z-30" style={{ width: `${columnWidths.codigo}px` }}>Código</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo}px`, width: `${columnWidths.nat}px` }}>Nat.</th>
-              <th className="bg-slate-100 py-2 px-2 text-left text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat}px`, width: `${columnWidths.descripcion}px` }}>Descripción</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion}px`, width: `${columnWidths.ud}px` }}>UD</th>
-              <th className="bg-slate-100 py-2 px-2 text-left text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud}px`, width: `${columnWidths.usertext}px` }}>UserText</th>
-              <th className="bg-yellow-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext}px`, width: `${columnWidths.medVenta}px` }}>{getValueColumnHeader()}</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta}px`, width: `${columnWidths.fechaInicio}px` }}>Fecha Inicio</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio}px`, width: `${columnWidths.fechaFin}px` }}>Fecha Fin</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin}px`, width: `${columnWidths.duracDias}px` }}>Durac.dias</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin + columnWidths.duracDias}px`, width: `${columnWidths.duracMes}px` }}>Durac.mes</th>
-              <th className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r-2 border-slate-400 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin + columnWidths.duracDias + columnWidths.duracMes}px`, width: `${columnWidths.rtoDias}px` }}>Rto/dias</th>
+        <table className="border-collapse" style={{ width: `${totalTableWidth}px`, tableLayout: 'fixed' }}>
+          <thead className="sticky top-0 z-50">
+            <tr className="border-b-2 border-slate-300 bg-slate-100">
+              <ResizableHeader columnKey="codigo" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-left text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky left-0 z-50" style={{ left: `${leftPositions.codigo}px`, width: columnWidths.codigo }}>Código</ResizableHeader>
+              <ResizableHeader columnKey="nat" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.nat}px`, width: columnWidths.nat }}>Nat.</ResizableHeader>
+              <ResizableHeader columnKey="descripcion" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-left text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.descripcion}px`, width: columnWidths.descripcion }}>Descripción</ResizableHeader>
+              <ResizableHeader columnKey="ud" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.ud}px`, width: columnWidths.ud }}>UD</ResizableHeader>
+              <ResizableHeader columnKey="usertext" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-left text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.usertext}px`, width: columnWidths.usertext }}>UserText</ResizableHeader>
+              <ResizableHeader columnKey="medVenta" columnWidths={columnWidths} onResize={handleResize} className="bg-yellow-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.medVenta}px`, width: columnWidths.medVenta }}>{getValueColumnHeader()}</ResizableHeader>
+              <ResizableHeader columnKey="fechaInicio" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.fechaInicio}px`, width: columnWidths.fechaInicio }}>Fecha Inicio</ResizableHeader>
+              <ResizableHeader columnKey="fechaFin" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.fechaFin}px`, width: columnWidths.fechaFin }}>Fecha Fin</ResizableHeader>
+              <ResizableHeader columnKey="duracDias" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.duracDias}px`, width: columnWidths.duracDias }}>Durac.dias</ResizableHeader>
+              <ResizableHeader columnKey="duracMes" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r border-slate-200 sticky z-50" style={{ left: `${leftPositions.duracMes}px`, width: columnWidths.duracMes }}>Durac.mes</ResizableHeader>
+              <ResizableHeader columnKey="rtoDias" columnWidths={columnWidths} onResize={handleResize} className="bg-slate-100 py-2 px-2 text-center text-[10px] font-semibold text-slate-700 uppercase border-r-2 border-slate-400 sticky z-50" style={{ left: `${leftPositions.rtoDias}px`, width: columnWidths.rtoDias }}>Rto/dias</ResizableHeader>
 
               {monthColumns.map((col, idx) => (
-                <th key={idx} className="py-2 px-2 text-center text-[10px] font-semibold bg-blue-100 border-r border-blue-200" style={{ width: `${columnWidths.month}px`, minWidth: `${columnWidths.month}px` }}>
+                <th key={idx} className="py-2 px-2 text-center text-[10px] font-semibold bg-blue-100 border-r border-blue-200 relative z-0" style={{ width: `${columnWidths.month}px` }}>
                   <div className="flex flex-col">
                     <span className="text-blue-900 font-bold text-[10px]">mes {col.monthNumber}</span>
                     <span className="text-blue-700 text-[9px]">{col.dateLabel}</span>
@@ -780,41 +909,36 @@ export default function AnalisisPlanificacion({
                   columnWidths={columnWidths}
                   expandedNodes={expandedNodes}
                   onToggleNode={handleToggleNode}
+                  leftPositions={leftPositions}
                 />
               ))
             )}
           </tbody>
-          <tfoot className="sticky bottom-0 z-20 border-t-2 border-slate-400">
+          <tfoot className="sticky bottom-0 z-50 border-t-2 border-slate-400">
             <tr className="bg-slate-200 font-bold">
-              <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky left-0 z-30 bg-slate-200" style={{ width: `${columnWidths.codigo}px` }}>TOTALES</td>
-              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo}px`, width: `${columnWidths.nat}px` }}></td>
-              <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat}px`, width: `${columnWidths.descripcion}px` }}></td>
-              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion}px`, width: `${columnWidths.ud}px` }}></td>
-              <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud}px`, width: `${columnWidths.usertext}px` }}></td>
-              <td className="bg-yellow-200 py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 sticky z-30" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext}px`, width: `${columnWidths.medVenta}px` }}>
+              <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.codigo}px`, width: columnWidths.codigo }}>TOTALES</td>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.nat}px`, width: columnWidths.nat }}></td>
+              <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.descripcion}px`, width: columnWidths.descripcion }}></td>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.ud}px`, width: columnWidths.ud }}></td>
+              <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.usertext}px`, width: columnWidths.usertext }}></td>
+              <td className="bg-yellow-200 py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 sticky z-50" style={{ left: `${leftPositions.medVenta}px`, width: columnWidths.medVenta }}>
                 {formatNumber(totals.totalBaseValue)}
               </td>
-              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta}px`, width: `${columnWidths.fechaInicio}px` }}>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.fechaInicio}px`, width: columnWidths.fechaInicio }}>
                 {totals.minDate ? formatDate(totals.minDate) : ''}
               </td>
-              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio}px`, width: `${columnWidths.fechaFin}px` }}>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.fechaFin}px`, width: columnWidths.fechaFin }}>
                 {totals.maxDate ? formatDate(totals.maxDate) : ''}
               </td>
-              <td className="py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin}px`, width: `${columnWidths.duracDias}px` }}>
-                {totals.minDate && totals.maxDate ? calculateDurationDays(totals.minDate, totals.maxDate) : ''}
-              </td>
-              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin + columnWidths.duracDias}px`, width: `${columnWidths.duracMes}px` }}></td>
-              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r-2 border-slate-400 sticky z-30 bg-slate-200" style={{ left: `${columnWidths.codigo + columnWidths.nat + columnWidths.descripcion + columnWidths.ud + columnWidths.usertext + columnWidths.medVenta + columnWidths.fechaInicio + columnWidths.fechaFin + columnWidths.duracDias + columnWidths.duracMes}px`, width: `${columnWidths.rtoDias}px` }}></td>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.duracDias}px`, width: columnWidths.duracDias }}></td>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.duracMes}px`, width: columnWidths.duracMes }}></td>
+              <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r-2 border-slate-400 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.rtoDias}px`, width: columnWidths.rtoDias }}></td>
 
-              {monthColumns.map((col, idx) => {
-                const monthKey = `${col.year}-${String(col.month + 1).padStart(2, '0')}`;
-                const monthTotal = totals.monthTotals.get(monthKey) || 0;
-                return (
-                  <td key={idx} className="py-2 px-2 text-right text-[10px] bg-blue-200 border-r border-blue-300" style={{ width: `${columnWidths.month}px`, minWidth: `${columnWidths.month}px` }}>
-                    {formatNumber(monthTotal)}
-                  </td>
-                );
-              })}
+              {monthColumns.map((col, idx) => (
+                <td key={idx} className="py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 font-mono bg-blue-100" style={{ width: columnWidths.month }}>
+                  {formatNumber(totals.monthTotals.get(`${col.year}-${String(col.month + 1).padStart(2, '0')}`))}
+                </td>
+              ))}
             </tr>
           </tfoot>
         </table>
