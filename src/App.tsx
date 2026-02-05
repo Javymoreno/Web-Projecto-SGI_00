@@ -339,7 +339,7 @@ export default function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img
-                src="/Captura de pantalla 2025-10-21 a las 20.27.29.png"
+                src="Captura de pantalla 2025-10-21 a las 20.27.29.png"
                 alt="Grupo INEXO Logo"
                 className="h-12"
               />

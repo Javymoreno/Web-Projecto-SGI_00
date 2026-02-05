@@ -186,7 +186,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img
-            src="/logo_grupo_inexo_black.png"
+            src="logo_grupo_inexo_black.png"
             alt="Grupo INEXO Logo"
             className="h-32 mx-auto mb-6"
           />
@@ -215,11 +215,10 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 setError(null);
                 setSuccess(null);
               }}
-              className={`flex-1 py-2 px-4 text-center font-medium transition-colors ${
-                isLogin
+              className={`flex-1 py-2 px-4 text-center font-medium transition-colors ${isLogin
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-slate-400 hover:text-white'
-              } rounded-l-lg`}
+                } rounded-l-lg`}
             >
               Iniciar Sesión
             </button>
@@ -229,11 +228,10 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 setError(null);
                 setSuccess(null);
               }}
-              className={`flex-1 py-2 px-4 text-center font-medium transition-colors ${
-                !isLogin
+              className={`flex-1 py-2 px-4 text-center font-medium transition-colors ${!isLogin
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-slate-400 hover:text-white'
-              } rounded-r-lg`}
+                } rounded-r-lg`}
             >
               Solicitar Acceso
             </button>
