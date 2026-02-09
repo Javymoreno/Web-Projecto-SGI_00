@@ -33,7 +33,16 @@ interface ColumnWidths {
 function buildTree(items: AnalisisDetallado[]): TreeNode[] {
   const itemMap = new Map<string, TreeNode>();
   const itemMapByCodigo = new Map<string, TreeNode>();
+  const itemMapByCodInf = new Map<string, TreeNode>();
   const rootNodes: TreeNode[] = [];
+
+  console.log('🔍 [Contrato] BuildTree: Total items received:', items.length);
+
+  const natCounts: Record<string, number> = {};
+  items.forEach(item => {
+    natCounts[item.nat] = (natCounts[item.nat] || 0) + 1;
+  });
+  console.log('📊 [Contrato] Items by NAT:', natCounts);
 
   items.forEach(item => {
     const node = { ...item, children: [] };
@@ -41,7 +50,14 @@ function buildTree(items: AnalisisDetallado[]): TreeNode[] {
     if (item.codigo) {
       itemMapByCodigo.set(item.codigo, node);
     }
+    if (item.CodInf) {
+      itemMapByCodInf.set(item.CodInf, node);
+    }
   });
+
+  let linkedCount = 0;
+  let orphanCount = 0;
+  const decompositionTypes = ['Material', 'Mano de obra', 'Maquinaria', 'Otros'];
 
   items.forEach(item => {
     const node = itemMap.get(item.Guid_SGI);
@@ -51,16 +67,31 @@ function buildTree(items: AnalisisDetallado[]): TreeNode[] {
         if (!parent) {
           parent = itemMapByCodigo.get(item.CodSup);
         }
+        if (!parent) {
+          parent = itemMapByCodInf.get(item.CodSup);
+        }
         if (parent) {
           parent.children.push(node);
+          linkedCount++;
+
+          if (decompositionTypes.includes(item.nat)) {
+            console.log(`✅ [Contrato] Linked: ${item.nat} "${item.resumen}" (${item.codigo}) -> Parent: ${parent.codigo}`);
+          }
         } else {
+          orphanCount++;
           rootNodes.push(node);
+
+          if (decompositionTypes.includes(item.nat)) {
+            console.log(`❌ [Contrato] ORPHAN: ${item.nat} "${item.resumen}" (${item.codigo}) - CodSup: "${item.CodSup}" not found`);
+          }
         }
       } else {
         rootNodes.push(node);
       }
     }
   });
+
+  console.log(`🔗 [Contrato] BuildTree results: ${linkedCount} linked, ${orphanCount} orphans, ${rootNodes.length} roots`);
 
   return rootNodes;
 }

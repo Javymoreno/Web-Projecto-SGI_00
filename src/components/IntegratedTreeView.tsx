@@ -34,34 +34,90 @@ interface ColumnWidths {
 function buildTree(items: AnalisisDetallado[]): TreeNode[] {
   const itemMap = new Map<string, TreeNode>();
   const itemMapByCodigo = new Map<string, TreeNode>();
+  const itemMapByCodInf = new Map<string, TreeNode>();
   const rootNodes: TreeNode[] = [];
+
+  console.log('🔍 BuildTree: Total items received:', items.length);
+
+  // Count items by nat type
+  const natCounts: Record<string, number> = {};
+  items.forEach(item => {
+    natCounts[item.nat] = (natCounts[item.nat] || 0) + 1;
+  });
+  console.log('📊 Items by NAT:', natCounts);
 
   items.forEach(item => {
     const node = { ...item, children: [] };
     itemMap.set(item.Guid_SGI, node);
+
+    // Index by codigo (primary field now that DB is fixed)
     if (item.codigo) {
       itemMapByCodigo.set(item.codigo, node);
     }
+
+    // Also index by CodInf as fallback
+    if (item.CodInf) {
+      itemMapByCodInf.set(item.CodInf, node);
+    }
   });
+
+  // Log sample codes for debugging
+  const partidaCodes = items.filter(i => i.nat === 'Partida').slice(0, 5).map(i => i.codigo);
+  console.log('📝 Sample Partida codes:', partidaCodes);
+
+  let linkedCount = 0;
+  let orphanCount = 0;
+  const decompositionTypes = ['Material', 'Mano de obra', 'Maquinaria', 'Otros'];
+  const orphanedDecomps: any[] = [];
 
   items.forEach(item => {
     const node = itemMap.get(item.Guid_SGI);
     if (node) {
       if (item.CodSup) {
+        // Try to find parent in this order:
+        // 1. By Guid_SGI
+        // 2. By codigo (primary field)
+        // 3. By CodInf (fallback)
         let parent = itemMap.get(item.CodSup);
         if (!parent) {
           parent = itemMapByCodigo.get(item.CodSup);
         }
+        if (!parent) {
+          parent = itemMapByCodInf.get(item.CodSup);
+        }
+
         if (parent) {
           parent.children.push(node);
+          linkedCount++;
+
+          // Log decomposition items specifically
+          if (decompositionTypes.includes(item.nat)) {
+            console.log(`✅ Linked decomposition: ${item.nat} "${item.resumen}" (${item.codigo}) -> Parent: ${parent.codigo}`);
+          }
         } else {
+          orphanCount++;
           rootNodes.push(node);
+
+          // Log orphaned decomposition items
+          if (decompositionTypes.includes(item.nat)) {
+            orphanedDecomps.push({ nat: item.nat, resumen: item.resumen, codigo: item.codigo, CodSup: item.CodSup, Guid_SGI: item.Guid_SGI });
+          }
         }
       } else {
         rootNodes.push(node);
       }
     }
   });
+
+  // Show first 5 orphaned decompositions
+  if (orphanedDecomps.length > 0) {
+    console.log(`❌ Found ${orphanedDecomps.length} orphaned decompositions. First 5:`);
+    orphanedDecomps.slice(0, 5).forEach(d => {
+      console.log(`   - ${d.nat} "${d.resumen}" | codigo: "${d.codigo}" | CodSup: "${d.CodSup}" | looking for parent with codigo or Guid_SGI = "${d.CodSup}"`);
+    });
+  }
+
+  console.log(`🔗 BuildTree results: ${linkedCount} linked, ${orphanCount} orphans, ${rootNodes.length} roots`);
 
   return rootNodes;
 }

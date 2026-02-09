@@ -82,7 +82,12 @@ export interface PlanificacionData extends AnalisisDetallado {
   duracion: number | null;
 }
 
-export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?: number, coefK: number = 1.0): Promise<AnalisisDetallado[]> {
+export async function fetchAnalisisDetallado(
+  codObra?: string,
+  analisisVersion?: number,
+  coefK: number = 1.0,
+  costeRefVersion: number = 0
+): Promise<AnalisisDetallado[]> {
   let analysisQuery = supabase
     .from('lineas_analisis')
     .select('*')
@@ -136,7 +141,7 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
     while (true) {
       const { data, error } = await supabase
         .from(table)
-        .select('clave_compuesta, version, canpres, pres, imppres, tipo_informacion')
+        .select('sgi_guid, clave_compuesta, version, canpres, pres, imppres, tipo_informacion')
         .eq('cod_obra', obraCode)
         .in('tipo_informacion', tiposPermitidos)
         .range(from, from + pageLimit - 1);
@@ -162,13 +167,11 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
     return allData;
   }
 
-  const [contratoDataRows, costeDataRows] = await Promise.all([
-    fetchAllRows('lineas_contrato', ['Partida', 'Capítulo']),
-    fetchAllRows('lineas_coste', ['Partida', 'Descompuesto', 'Capítulo'])
-  ]);
 
-  console.log('Contrato data rows:', contratoDataRows.length);
-  console.log('Coste data rows:', costeDataRows.length);
+  const [contratoDataRows, costeDataRows] = await Promise.all([
+    fetchAllRows('lineas_contrato', ['Partida', 'Capítulo', 'Material', 'Mano de obra', 'Maquinaria', 'Otros', 'Descompuesto']),
+    fetchAllRows('lineas_coste', ['Partida', 'Descompuesto', 'Capítulo', 'Material', 'Mano de obra', 'Maquinaria', 'Otros'])
+  ]);
 
   // Para versión 0: indexar por clave_compuesta de lineas_contrato
   // Luego se buscará usando clave_compuesta de lineas_analisis
@@ -216,7 +219,7 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
 
   const costeMap = new Map<string, Map<number, { canpres: number; pres: number; imppres: number }>>();
   costeDataRows.forEach(row => {
-    const key = row.clave_compuesta;
+    const key = row.sgi_guid;
     const version = row.version || 0;
 
     if (!costeMap.has(key)) {
@@ -250,9 +253,10 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
     const c1 = contratoV1Plus?.get(1) || { canpres: 0, pres: 0, imppres: 0 };
     const c2 = contratoV1Plus?.get(2) || { canpres: 0, pres: 0, imppres: 0 };
 
-    // COSTE: Todas las versiones usan clave_compuesta de lineas_analisis
-    // Join: lineas_analisis.clave_compuesta = lineas_coste.clave_compuesta
-    const costeVersions = costeMap.get(row.clave_compuesta);
+    // COSTE: Todas las versiones usan Guid_SGI para vincular con sgi_guid
+    // Join: lineas_analisis.Guid_SGI = lineas_coste.sgi_guid
+    const costeVersions = costeMap.get(row.Guid_SGI);
+
     const t0 = costeVersions?.get(0) || { canpres: 0, pres: 0, imppres: 0 };
     const t1 = costeVersions?.get(1) || { canpres: 0, pres: 0, imppres: 0 };
     const t2 = costeVersions?.get(2) || { canpres: 0, pres: 0, imppres: 0 };
@@ -324,39 +328,36 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
   });
 
   // Ajustar importes y precios de descompuestos
-  const adjustDecompositionPrices = (data: AnalisisDetallado[], coeficienteK: number) => {
+  const adjustDecompositionPrices = (data: AnalisisDetallado[], coeficienteK: number, refVersion: number) => {
     data.forEach(partida => {
       if (partida.nat === 'Partida') {
-        const hijos = data.filter(row => row.CodSup === partida.codigo);
+        // Encontrar hijos por codigo o Guid_SGI del padre
+        const hijos = data.filter(row => row.CodSup === partida.codigo || row.CodSup === partida.Guid_SGI);
 
         if (hijos.length > 0) {
           const versions = [
-            { prefix: 'Contrato_v0', precioContrato: partida.Contrato_v0_precio, versionKey: 'v0' },
-            { prefix: 'Contrato_v1', precioContrato: partida.Contrato_v1_precio, versionKey: 'v1' },
-            { prefix: 'Contrato_v2', precioContrato: partida.Contrato_v2_precio, versionKey: 'v2' },
+            { prefix: 'Contrato_v0', precioContrato: partida.Contrato_v0_precio },
+            { prefix: 'Contrato_v1', precioContrato: partida.Contrato_v1_precio },
+            { prefix: 'Contrato_v2', precioContrato: partida.Contrato_v2_precio },
           ];
 
-          versions.forEach(({ prefix, precioContrato, versionKey }) => {
+          // Todas las versiones de contrato se reparten usando los pesos de la versión de COSTE SELECCIONADA
+          const costRefKey = `Coste_v${refVersion}_importe`;
+
+          versions.forEach(({ prefix, precioContrato }) => {
             if (precioContrato > 0) {
               const sumaImportesCosteHijosK = hijos.reduce((sum, hijo) => {
-                const importeCoste = (hijo as any)[`Coste_${versionKey}_importe`] || 0;
+                const importeCoste = (hijo as any)[costRefKey] || 0;
                 return sum + (importeCoste * coeficienteK);
               }, 0);
 
               if (sumaImportesCosteHijosK > 0) {
-                if (partida.codigo === 'CAN-AS01' && versionKey === 'v0') {
-                  console.log(`CÁLCULO PARA ${partida.codigo}:`, {
-                    precio_contrato_padre: precioContrato,
-                    coef_k: coeficienteK,
-                    suma_importes_coste_hijos_con_k: sumaImportesCosteHijosK,
-                    num_hijos: hijos.length
-                  });
-                }
-
                 hijos.forEach(hijo => {
-                  const importeCosteHijo = (hijo as any)[`Coste_${versionKey}_importe`] || 0;
+                  const importeCosteHijo = (hijo as any)[costRefKey] || 0;
                   const importeCosteHijoK = importeCosteHijo * coeficienteK;
-                  const cantidadCosteHijo = (hijo as any)[`Coste_${versionKey}_cant`] || 0;
+
+                  // La cantidad se toma de la misma versión de coste de referencia
+                  const cantidadCosteHijo = (hijo as any)[`Coste_v${refVersion}_cant`] || 0;
 
                   if (importeCosteHijoK > 0) {
                     const proporcion = importeCosteHijoK / sumaImportesCosteHijosK;
@@ -367,17 +368,6 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
 
                     if (cantidadCosteHijo > 0) {
                       (hijo as any)[`${prefix}_precio`] = importeContratoHijo / cantidadCosteHijo;
-                    }
-
-                    if (partida.codigo === 'CAN-AS01' && versionKey === 'v0') {
-                      console.log(`  HIJO ${hijo.codigo}:`, {
-                        importe_coste: importeCosteHijo,
-                        importe_coste_con_k: importeCosteHijoK,
-                        proporcion: proporcion,
-                        RESULTADO_importe: importeContratoHijo,
-                        RESULTADO_cant: cantidadCosteHijo,
-                        RESULTADO_precio: cantidadCosteHijo > 0 ? importeContratoHijo / cantidadCosteHijo : 0
-                      });
                     }
                   }
                 });
@@ -391,17 +381,7 @@ export async function fetchAnalisisDetallado(codObra?: string, analisisVersion?:
     return data;
   };
 
-  const result = adjustDecompositionPrices(preliminaryData, coefK);
-
-  const canAS01Hijos = result.filter(r => r.CodSup === 'CAN-AS01');
-  console.log('✅ VALORES FINALES DE HIJOS CAN-AS01:', canAS01Hijos.map(h => ({
-    codigo: h.codigo,
-    Contrato_v0_importe: h.Contrato_v0_importe,
-    Contrato_v0_cant: h.Contrato_v0_cant,
-    Contrato_v0_precio: h.Contrato_v0_precio
-  })));
-
-  return result;
+  return adjustDecompositionPrices(preliminaryData, coefK, costeRefVersion);
 }
 
 export async function fetchCapitulosPorCodSup(codSup?: string): Promise<AnalisisDetallado[]> {

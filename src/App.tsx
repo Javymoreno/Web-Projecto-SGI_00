@@ -87,7 +87,7 @@ export default function App() {
     if (selectedObra && coefK > 0) {
       loadObraData();
     }
-  }, [selectedObra, analisisVersion, coefK]);
+  }, [selectedObra, analisisVersion, coefK, costeVersion]);
 
   async function loadObras(permissions?: string[]) {
     try {
@@ -128,8 +128,8 @@ export default function App() {
       setLoading(true);
       setError(null);
 
-      console.log('=== CARGANDO DATOS CON:', { selectedObra, analisisVersion, coefK });
-      const analisisData = await fetchAnalisisDetallado(selectedObra, analisisVersion, coefK);
+      console.log('=== CARGANDO DATOS CON:', { selectedObra, analisisVersion, coefK, costeVersion });
+      const analisisData = await fetchAnalisisDetallado(selectedObra, analisisVersion, coefK, costeVersion);
       console.log('=== DATOS CARGADOS, total filas:', analisisData.length);
       setData(analisisData);
     } catch (err) {
