@@ -62,9 +62,11 @@ export default function CertidumbreView({ data, contratoVersion, costeVersion, c
       sumaContrato += contratoImporte;
       sumaVenta += contratoImporte;
 
-      // 2. Calcular Certidumbre (Coste con K) solo para items clasificados (1-5)
-      const userNum = Math.round(item.UserNumber || 0);
-      if (userNum >= 1 && userNum <= 5) {
+      // 2. Calcular Certidumbre (Coste con K)
+      // Mapear NULL a 0
+      const userNum = item.UserNumber === null ? 0 : Math.round(item.UserNumber || 0);
+
+      if (userNum >= 0 && userNum <= 5) {
         const costeKey = `Coste_v${costeVersion}` as const;
         const costeTipo = (item as any)[`${costeKey}_tipo`] || '';
         let costeCant = parseFloat((item as any)[`${costeKey}_cant`]) || 0;
@@ -81,6 +83,7 @@ export default function CertidumbreView({ data, contratoVersion, costeVersion, c
     });
 
     const rangos: { [key: number]: { descripcion: string; rango: number } } = {
+      0: { descripcion: 'SIN CLASIFICAR', rango: 25 },
       1: { descripcion: 'ESTIMACIÓN PERSONAL / K DE PASO', rango: 20 },
       2: { descripcion: 'BASES DE DATOS / PRECIOS SIMILARES DE OTRAS OBRAS / SIS', rango: 18 },
       3: { descripcion: 'OFERTAS RECIBIDAS EN ESTUDIOS', rango: 14 },
@@ -90,7 +93,7 @@ export default function CertidumbreView({ data, contratoVersion, costeVersion, c
 
     const resultado: CertidumbreData[] = [];
 
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 0; i <= 5; i++) {
       const costePlanificado = certidumbreMap.get(i) || 0;
       const rangoInfo = rangos[i];
       const factor = rangoInfo.rango / 100;
@@ -263,6 +266,7 @@ export default function CertidumbreView({ data, contratoVersion, costeVersion, c
           <div className="mt-8 p-4 bg-slate-50 rounded-lg border border-slate-200">
             <h4 className="text-sm font-semibold text-slate-700 mb-3">Criterios de Certidumbre:</h4>
             <ul className="space-y-2 text-sm text-slate-600">
+              <li><span className="font-semibold">0. Sin Clasificar:</span> Desviación ±25%</li>
               <li><span className="font-semibold">1. Estimación Personal / K de Paso:</span> Desviación ±20%</li>
               <li><span className="font-semibold">2. Bases de Datos / Precios Similares / SIS:</span> Desviación ±18%</li>
               <li><span className="font-semibold">3. Ofertas Recibidas en Estudios:</span> Desviación ±14%</li>
