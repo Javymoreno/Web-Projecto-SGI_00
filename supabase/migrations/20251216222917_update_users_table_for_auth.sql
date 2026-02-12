@@ -47,21 +47,17 @@ CREATE INDEX IF NOT EXISTS idx_users_aceptado ON "Users"("Aceptado");
 CREATE INDEX IF NOT EXISTS idx_users_auth_id ON "Users"(auth_user_id);
 
 DROP POLICY IF EXISTS "Permitir lectura pública" ON "Users";
+DROP POLICY IF EXISTS "Permitir lectura pública para validación" ON "Users";
 DROP POLICY IF EXISTS "Usuarios pueden ver su propio registro" ON "Users";
 DROP POLICY IF EXISTS "Permitir inserción de nuevos usuarios" ON "Users";
+DROP POLICY IF EXISTS "Permitir inserción para registro" ON "Users";
 DROP POLICY IF EXISTS "Usuarios pueden actualizar su registro" ON "Users";
 
 CREATE POLICY "Usuarios pueden ver su propio registro"
   ON "Users"
   FOR SELECT
   TO authenticated
-  USING (auth.uid() = auth_user_id OR "Aceptado" = true);
-
-CREATE POLICY "Permitir lectura pública para validación"
-  ON "Users"
-  FOR SELECT
-  TO anon
-  USING (true);
+  USING (auth.uid() = auth_user_id);
 
 CREATE POLICY "Permitir inserción para registro"
   ON "Users"

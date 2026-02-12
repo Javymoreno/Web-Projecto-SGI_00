@@ -725,18 +725,9 @@ export default function AnalisisPlanificacion({
       csvContent += `${fechaInicio};${fechaFin};${duracDias};${duracMes};${rtoDias};`;
 
       monthColumns.forEach(col => {
-        const monthKey = `${col.year}-${String(col.month).padStart(2, '0')}`;
         let monthValue = 0;
-        const nodeMonthValue = (node as any)[monthKey];
-        if (nodeMonthValue !== undefined && nodeMonthValue !== null) {
-          monthValue = parseFloat(nodeMonthValue) || 0;
-        } else if (planInfo) {
-          const monthStart = new Date(col.year, col.month - 1, 1);
-          const monthEnd = new Date(col.year, col.month, 0);
-          const overlapDays = getOverlapDays(planInfo.comienzo, planInfo.fin, monthStart, monthEnd);
-          if (overlapDays > 0 && duracDias > 0) {
-            monthValue = (baseValue / duracDias) * overlapDays;
-          }
+        if (planInfo) {
+          monthValue = calculateMonthlyValue(baseValue, planInfo.comienzo, planInfo.fin, col.year, col.month);
         }
         csvContent += `${formatNumber(monthValue)};`;
       });

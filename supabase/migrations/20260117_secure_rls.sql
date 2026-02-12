@@ -17,6 +17,7 @@ BEGIN
   RETURN EXISTS (
     SELECT 1 FROM public."Users"
     WHERE auth_user_id = auth.uid()
+    AND "Aceptado" = true
     AND (
       -- Admin access: 'todas' is in the array
       'todas' = ANY(obras)
