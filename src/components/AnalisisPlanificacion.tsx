@@ -17,7 +17,7 @@ interface TreeNode extends AnalisisDetallado {
   duracion?: number | null;
 }
 
-type DataSource = 'contrato' | 'coste';
+type DataSource = 'contrato' | 'coste' | 'resultado';
 type ValueType = 'cantidad' | 'importe';
 
 interface MonthColumn {
@@ -228,19 +228,6 @@ function calculateDurationMonths(days: number): number {
   return days / 30;
 }
 
-function getOverlapDays(startDate: Date, endDate: Date, monthStart: Date, monthEnd: Date): number {
-  if (endDate < monthStart || startDate > monthEnd) {
-    return 0;
-  }
-
-  const overlapStart = startDate > monthStart ? startDate : monthStart;
-  const overlapEnd = endDate < monthEnd ? endDate : monthEnd;
-
-  const diffTime = overlapEnd.getTime() - overlapStart.getTime();
-  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-  return days > 0 ? days : 0;
-}
 
 function ResizableHeader({
   children,
@@ -317,7 +304,6 @@ interface TreeNodeRowProps {
   coefK: number;
   expandLevel: number;
   dataSource: DataSource;
-  sourceVersion: number;
   valueType: ValueType;
   monthColumns: MonthColumn[];
   planData: Map<string, { comienzo: Date; fin: Date }>;
@@ -325,6 +311,7 @@ interface TreeNodeRowProps {
   expandedNodes: Set<string>;
   onToggleNode: (nodeId: string) => void;
   leftPositions: Record<FixedColumnKey, number>;
+  calculatedValues: Map<string, { base: number; monthly: number[] }>;
 }
 
 function TreeNodeRow({
@@ -335,14 +322,14 @@ function TreeNodeRow({
   coefK,
   expandLevel,
   dataSource,
-  sourceVersion,
   valueType,
   monthColumns,
   planData,
   columnWidths,
   expandedNodes,
   onToggleNode,
-  leftPositions
+  leftPositions,
+  calculatedValues
 }: TreeNodeRowProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedNodes.has(node.Guid_SGI);
@@ -366,29 +353,15 @@ function TreeNodeRow({
 
   const indentWidth = level * 20;
 
-  const versionKey = `${dataSource === 'contrato' ? 'Contrato' : 'Coste'}_v${sourceVersion}`;
 
-  let baseValue = 0;
-  if (valueType === 'cantidad') {
-    baseValue = parseFloat((node as any)[`${versionKey}_cant`]) || 0;
-  } else {
-    baseValue = parseFloat((node as any)[`${versionKey}_importe`]) || 0;
+  const { base: baseValue, monthly: monthlyValues } = calculatedValues.get(node.Guid_SGI) || { base: 0, monthly: [] };
 
-    if (dataSource === 'coste') {
-      baseValue = baseValue * coefK;
-    }
-  }
-
-  const dates = planData.get(node.plan_guid);
+  const isChapter = node.nat === 'Capítulo';
+  const dates = !isChapter ? planData.get(node.plan_guid) : null;
 
   const durationDays = dates ? calculateDurationDays(dates.comienzo, dates.fin) : 0;
-  const durationMonths = calculateDurationMonths(durationDays);
-  const rtoDias = durationDays > 0 ? baseValue / durationDays : 0;
-
-  const monthlyValues = monthColumns.map(col => {
-    if (!dates) return 0;
-    return calculateMonthlyValue(baseValue, dates.comienzo, dates.fin, col.year, col.month);
-  });
+  const durationMonths = !isChapter ? calculateDurationMonths(durationDays) : 0;
+  const rtoDias = !isChapter && durationDays > 0 ? baseValue / durationDays : 0;
 
   return (
     <>
@@ -420,27 +393,27 @@ function TreeNodeRow({
         <td className={`py-1 px-2 text-[10px] border-r border-slate-200 text-slate-600 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.usertext}px`, width: `${columnWidths.usertext}px` }}>{node.UserText}</td>
 
         {/* IMPORTE / CANTIDAD */}
-        <td className={`py-1 px-2 text-xs text-right font-mono border-r border-slate-200 ${getBgColor() || 'bg-white'} bg-yellow-50 sticky z-40`} style={{ left: `${leftPositions.medVenta}px`, width: `${columnWidths.medVenta}px` }}>{formatNumber(baseValue)}</td>
+        <td className={`py-1 px-2 text-xs text-right font-mono border-r border-slate-200 ${getBgColor() || 'bg-white'} bg-yellow-50 sticky z-40 ${baseValue < 0 ? 'text-red-600' : ''}`} style={{ left: `${leftPositions.medVenta}px`, width: `${columnWidths.medVenta}px` }}>{formatNumber(baseValue)}</td>
 
         {/* FECHA INICIO */}
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.fechaInicio}px`, width: `${columnWidths.fechaInicio}px` }}>{formatDate(dates?.comienzo)}</td>
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.fechaInicio}px`, width: `${columnWidths.fechaInicio}px` }}>{!isChapter ? formatDate(dates?.comienzo) : ''}</td>
 
         {/* FECHA FIN */}
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.fechaFin}px`, width: `${columnWidths.fechaFin}px` }}>{formatDate(dates?.fin)}</td>
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.fechaFin}px`, width: `${columnWidths.fechaFin}px` }}>{!isChapter ? formatDate(dates?.fin) : ''}</td>
 
         {/* DURAC DIAS */}
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.duracDias}px`, width: `${columnWidths.duracDias}px` }}>{durationDays > 0 ? durationDays : ''}</td>
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.duracDias}px`, width: `${columnWidths.duracDias}px` }}>{!isChapter && durationDays > 0 ? durationDays : ''}</td>
 
         {/* DURAC MES */}
-        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.duracMes}px`, width: `${columnWidths.duracMes}px` }}>{durationMonths > 0 ? formatNumber(durationMonths) : ''}</td>
+        <td className={`py-1 px-2 text-[10px] text-center border-r border-slate-200 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.duracMes}px`, width: `${columnWidths.duracMes}px` }}>{!isChapter && durationMonths > 0 ? formatNumber(durationMonths) : ''}</td>
 
         {/* RTO DIAS */}
-        <td className={`py-1 px-2 text-xs text-right font-mono border-r-2 border-slate-400 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.rtoDias}px`, width: `${columnWidths.rtoDias}px` }}>{rtoDias > 0 ? formatNumber(rtoDias) : ''}</td>
+        <td className={`py-1 px-2 text-xs text-right font-mono border-r-2 border-slate-400 ${getBgColor() || 'bg-white'} sticky z-40`} style={{ left: `${leftPositions.rtoDias}px`, width: `${columnWidths.rtoDias}px` }}>{!isChapter && rtoDias > 0 ? formatNumber(rtoDias) : ''}</td>
 
         {/* MONTHS */}
         {monthlyValues.map((value, idx) => (
-          <td key={idx} className={`py-1 px-2 text-xs text-right font-mono border-r border-blue-200 ${getBgColor() || 'bg-blue-50'}`} style={{ width: `${columnWidths.month}px` }}>
-            {value > 0 ? formatNumber(value) : ''}
+          <td key={idx} className={`py-1 px-2 text-xs text-right font-mono border-r border-blue-200 ${getBgColor() || 'bg-blue-50'} ${value < 0 ? 'text-red-600' : ''}`} style={{ width: `${columnWidths.month}px` }}>
+            {Math.abs(value) > 0.001 ? formatNumber(value) : ''}
           </td>
         ))}
       </tr>
@@ -457,7 +430,6 @@ function TreeNodeRow({
               coefK={coefK}
               expandLevel={expandLevel}
               dataSource={dataSource}
-              sourceVersion={sourceVersion}
               valueType={valueType}
               monthColumns={monthColumns}
               planData={planData}
@@ -465,6 +437,7 @@ function TreeNodeRow({
               expandedNodes={expandedNodes}
               onToggleNode={onToggleNode}
               leftPositions={leftPositions}
+              calculatedValues={calculatedValues}
             />
           ))}
         </>
@@ -487,7 +460,6 @@ export default function AnalisisPlanificacion({
   const [expandLevel, setExpandLevel] = useState<number>(1);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [dataSource, setDataSource] = useState<DataSource>('contrato');
-  const [sourceVersion, setSourceVersion] = useState<number>(0);
   const [valueType, setValueType] = useState<ValueType>('importe');
   const [monthColumns, setMonthColumns] = useState<MonthColumn[]>([]);
 
@@ -610,13 +582,84 @@ export default function AnalisisPlanificacion({
   }
 
   const getValueColumnHeader = () => {
+    if (dataSource === 'resultado') return 'RESULTADO (C-K)';
     const source = dataSource === 'contrato' ? 'CONTRATO' : 'COSTE';
     const value = valueType === 'cantidad' ? 'CANT' : 'IMP';
     return `${value}.${source}`;
   };
 
+  const calculatedValues = useMemo(() => {
+    const map = new Map<string, { base: number; monthly: number[] }>();
+
+    const calculateNode = (node: TreeNode): { base: number; monthly: number[] } => {
+      if (node.nat === 'Partida') {
+        let base = 0;
+        const nodeDates = planData.get(node.plan_guid);
+
+        if (dataSource === 'resultado') {
+          const impContrato = parseFloat((node as any)[`Contrato_v${contratoVersion}_importe`]) || 0;
+          const impCoste = parseFloat((node as any)[`Coste_v${costeVersion}_importe`]) || 0;
+          const impCosteK = impCoste * coefK;
+          base = impContrato - impCosteK;
+
+          const monthly = monthColumns.map(col => {
+            if (!nodeDates) return 0;
+            const mContrato = calculateMonthlyValue(impContrato, nodeDates.comienzo, nodeDates.fin, col.year, col.month);
+            const mCosteK = calculateMonthlyValue(impCosteK, nodeDates.comienzo, nodeDates.fin, col.year, col.month);
+            return mContrato - mCosteK;
+          });
+
+          const result = { base, monthly };
+          map.set(node.Guid_SGI, result);
+          return result;
+        }
+
+        const currentVersion = dataSource === 'contrato' ? contratoVersion : costeVersion;
+        const versionPrefix = dataSource === 'contrato' ? 'Contrato' : 'Coste';
+        const key = `${versionPrefix}_v${currentVersion}_${valueType === 'cantidad' ? 'cant' : 'importe'}`;
+
+        base = parseFloat((node as any)[key]) || 0;
+        if (dataSource === 'coste' && valueType === 'importe') {
+          base = base * coefK;
+        }
+
+        const monthly = monthColumns.map(col => {
+          if (!nodeDates) return 0;
+          return calculateMonthlyValue(base, nodeDates.comienzo, nodeDates.fin, col.year, col.month);
+        });
+
+        const result = { base, monthly };
+        map.set(node.Guid_SGI, result);
+        return result;
+      }
+
+      // Chapter
+      let totalBase = 0;
+      let totalMonthly = new Array(monthColumns.length).fill(0);
+
+      node.children.forEach(child => {
+        const childVals = calculateNode(child);
+        totalBase += childVals.base;
+        childVals.monthly.forEach((val, idx) => {
+          totalMonthly[idx] += val;
+        });
+      });
+
+      const result = { base: totalBase, monthly: totalMonthly };
+      map.set(node.Guid_SGI, result);
+      return result;
+    };
+
+    data.forEach(node => calculateNode(node));
+    return map;
+  }, [data, planData, dataSource, contratoVersion, costeVersion, valueType, coefK, monthColumns]);
+
   const calculateTotals = () => {
-    const versionKey = `${dataSource === 'contrato' ? 'Contrato' : 'Coste'}_v${sourceVersion}`;
+    // Re-use logic or adapt to use calculatedValues?
+    // User wanted "bottom total limited to 'Partida' only".
+    // This logic loop iterates Partidas, so it is safe.
+    // We can optimization: iterate data and check if Partida -> use map values.
+
     let totalBaseValue = 0;
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
@@ -624,52 +667,24 @@ export default function AnalisisPlanificacion({
 
     const processNode = (node: TreeNode) => {
       if (node.nat === 'Partida') {
-        let nodeValue = 0;
-        if (valueType === 'cantidad') {
-          nodeValue = parseFloat((node as any)[`${versionKey}_cant`]) || 0;
-        } else {
-          nodeValue = parseFloat((node as any)[`${versionKey}_importe`]) || 0;
-          if (dataSource === 'coste') {
-            nodeValue = nodeValue * coefK;
-          }
-        }
-        totalBaseValue += nodeValue;
+        const vals = calculatedValues.get(node.Guid_SGI);
+        if (vals) {
+          totalBaseValue += vals.base;
 
-        const planInfo = planData.get(node.plan_guid);
-        if (planInfo) {
-          if (!minDate || planInfo.comienzo < minDate) {
-            minDate = planInfo.comienzo;
-          }
-          if (!maxDate || planInfo.fin > maxDate) {
-            maxDate = planInfo.fin;
-          }
-
-          let nodeBaseValue = 0;
-          if (valueType === 'cantidad') {
-            nodeBaseValue = parseFloat((node as any)[`${versionKey}_cant`]) || 0;
-          } else {
-            nodeBaseValue = parseFloat((node as any)[`${versionKey}_importe`]) || 0;
-            if (dataSource === 'coste') {
-              nodeBaseValue = nodeBaseValue * coefK;
-            }
-          }
-
-          const duracDias = calculateDurationDays(planInfo.comienzo, planInfo.fin);
-
-          monthColumns.forEach(col => {
+          monthColumns.forEach((col, idx) => {
             const monthKey = `${col.year}-${String(col.month + 1).padStart(2, '0')}`;
-            const monthStart = new Date(col.year, col.month, 1);
-            const monthEnd = new Date(col.year, col.month + 1, 0);
-            const overlapDays = getOverlapDays(planInfo.comienzo, planInfo.fin, monthStart, monthEnd);
-
-            if (overlapDays > 0 && duracDias > 0) {
-              const monthValue = (nodeBaseValue / duracDias) * overlapDays;
-              monthTotals.set(monthKey, (monthTotals.get(monthKey) || 0) + monthValue);
-            }
+            monthTotals.set(monthKey, (monthTotals.get(monthKey) || 0) + vals.monthly[idx]);
           });
         }
-      }
 
+        // Dates still need direct access or we could cache them too, but 
+        // calculateTotals runs rarely compared to render.
+        const planInfo = planData.get(node.plan_guid);
+        if (planInfo) {
+          if (!minDate || planInfo.comienzo < minDate) minDate = planInfo.comienzo;
+          if (!maxDate || planInfo.fin > maxDate) maxDate = planInfo.fin;
+        }
+      }
       node.children.forEach(child => processNode(child));
     };
 
@@ -683,7 +698,7 @@ export default function AnalisisPlanificacion({
     };
   };
 
-  const totals = useMemo(() => calculateTotals(), [data, planData, dataSource, sourceVersion, valueType, coefK, monthColumns]);
+  const totals = useMemo(() => calculateTotals(), [data, planData, dataSource, contratoVersion, costeVersion, valueType, coefK, monthColumns]);
 
   const exportToExcel = () => {
     // ... exact export logic ...
@@ -706,32 +721,25 @@ export default function AnalisisPlanificacion({
     };
 
     const addRowToCSV = (node: TreeNode, level: number = 0) => {
-      const versionKey = `${dataSource === 'contrato' ? 'Contrato' : 'Coste'}_v${sourceVersion}`;
-      let baseValue = 0;
-      if (valueType === 'cantidad') {
-        baseValue = parseFloat((node as any)[`${versionKey}_cant`]) || 0;
-      } else {
-        baseValue = parseFloat((node as any)[`${versionKey}_importe`]) || 0;
-      }
-      const planInfo = planData.get(node.plan_guid);
+      const vals = calculatedValues.get(node.Guid_SGI) || { base: 0, monthly: [] };
+      const isChapterLocal = node.nat === 'Capítulo';
+      const planInfo = !isChapterLocal ? planData.get(node.plan_guid) : null;
+
       const fechaInicio = planInfo?.comienzo ? formatDate(planInfo.comienzo) : '';
       const fechaFin = planInfo?.fin ? formatDate(planInfo.fin) : '';
-      const duracDias = planInfo ? calculateDurationDays(planInfo.comienzo, planInfo.fin) : 0;
-      const duracMes = duracDias > 0 ? (duracDias / 30).toFixed(2) : '';
-      const rtoDias = duracDias > 0 ? (baseValue / duracDias).toFixed(2) : '';
+      const duracDias = !isChapterLocal && planInfo ? calculateDurationDays(planInfo.comienzo, planInfo.fin) : 0;
+      const duracMes = !isChapterLocal && duracDias > 0 ? (duracDias / 30).toFixed(2) : '';
+      const rtoDias = !isChapterLocal && duracDias > 0 ? (vals.base / duracDias).toFixed(2) : '';
 
       csvContent += `${escapeCsv(node.codigo)};${escapeCsv(node.nat)};${escapeCsv(node.resumen)};${escapeCsv(node.ud)};${escapeCsv(node.UserText)};`;
-      csvContent += `${formatNumber(baseValue)};`;
-      csvContent += `${fechaInicio};${fechaFin};${duracDias};${duracMes};${rtoDias};`;
+      csvContent += `${formatNumber(vals.base)};`;
+      csvContent += `${fechaInicio};${fechaFin};${duracDias > 0 ? duracDias : ''};${duracMes};${rtoDias};`;
 
-      monthColumns.forEach(col => {
-        let monthValue = 0;
-        if (planInfo) {
-          monthValue = calculateMonthlyValue(baseValue, planInfo.comienzo, planInfo.fin, col.year, col.month);
-        }
+      vals.monthly.forEach(monthValue => {
         csvContent += `${formatNumber(monthValue)};`;
       });
       csvContent += '\n';
+
       node.children.forEach(child => addRowToCSV(child, level + 1));
     };
 
@@ -809,31 +817,20 @@ export default function AnalisisPlanificacion({
               >
                 <option value="contrato">Contrato</option>
                 <option value="coste">Coste</option>
+                <option value="resultado">Resultado</option>
               </select>
             </div>
 
-            <div>
-              <label className="text-sm text-slate-600 mr-2">Versión:</label>
-              <select
-                value={sourceVersion}
-                onChange={(e) => setSourceVersion(Number(e.target.value))}
-                className="px-3 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-              >
-                <option value={0}>V0</option>
-                <option value={1}>V1</option>
-                <option value={2}>V2</option>
-              </select>
-            </div>
-
-            <div>
+            <div className={dataSource === 'resultado' ? 'opacity-50 pointer-events-none' : ''}>
               <label className="text-sm text-slate-600 mr-2">Valor:</label>
               <select
                 value={valueType}
+                disabled={dataSource === 'resultado'}
                 onChange={(e) => setValueType(e.target.value as ValueType)}
                 className="px-3 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
               >
                 <option value="cantidad">Cantidad</option>
-                <option value="importe">{dataSource === 'coste' ? 'ImporteK' : 'Importe'}</option>
+                <option value="importe">{(dataSource === 'coste' || dataSource === 'resultado') ? 'ImporteK' : 'Importe'}</option>
               </select>
             </div>
 
@@ -893,7 +890,6 @@ export default function AnalisisPlanificacion({
                   coefK={coefK}
                   expandLevel={expandLevel}
                   dataSource={dataSource}
-                  sourceVersion={sourceVersion}
                   valueType={valueType}
                   monthColumns={monthColumns}
                   planData={planData}
@@ -901,6 +897,7 @@ export default function AnalisisPlanificacion({
                   expandedNodes={expandedNodes}
                   onToggleNode={handleToggleNode}
                   leftPositions={leftPositions}
+                  calculatedValues={calculatedValues}
                 />
               ))
             )}
@@ -912,7 +909,7 @@ export default function AnalisisPlanificacion({
               <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.descripcion}px`, width: columnWidths.descripcion }}></td>
               <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.ud}px`, width: columnWidths.ud }}></td>
               <td className="py-2 px-2 text-left text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.usertext}px`, width: columnWidths.usertext }}></td>
-              <td className="bg-yellow-200 py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 sticky z-50" style={{ left: `${leftPositions.medVenta}px`, width: columnWidths.medVenta }}>
+              <td className={`bg-yellow-200 py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 ${totals.totalBaseValue < 0 ? 'text-red-600' : ''}`} style={{ left: `${leftPositions.medVenta}px`, width: columnWidths.medVenta }}>
                 {formatNumber(totals.totalBaseValue)}
               </td>
               <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.fechaInicio}px`, width: columnWidths.fechaInicio }}>
@@ -925,11 +922,14 @@ export default function AnalisisPlanificacion({
               <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r border-slate-300 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.duracMes}px`, width: columnWidths.duracMes }}></td>
               <td className="py-2 px-2 text-center text-[10px] text-slate-900 border-r-2 border-slate-400 sticky z-50 bg-slate-200" style={{ left: `${leftPositions.rtoDias}px`, width: columnWidths.rtoDias }}></td>
 
-              {monthColumns.map((col, idx) => (
-                <td key={idx} className="py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 font-mono bg-blue-100" style={{ width: columnWidths.month }}>
-                  {formatNumber(totals.monthTotals.get(`${col.year}-${String(col.month + 1).padStart(2, '0')}`))}
-                </td>
-              ))}
+              {monthColumns.map((col, idx) => {
+                const val = totals.monthTotals.get(`${col.year}-${String(col.month + 1).padStart(2, '0')}`) || 0;
+                return (
+                  <td key={idx} className={`py-2 px-2 text-right text-[10px] text-slate-900 border-r border-slate-300 font-mono bg-blue-100 ${val < 0 ? 'text-red-600' : ''}`} style={{ width: columnWidths.month }}>
+                    {Math.abs(val) > 0.001 ? formatNumber(val) : ''}
+                  </td>
+                );
+              })}
             </tr>
           </tfoot>
         </table>
