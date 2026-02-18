@@ -27,6 +27,7 @@ interface ColumnWidths {
   costePrecioK: number;
   costeImporteK: number;
   difMedicion: number;
+  userNumber: number;
   difImporte: number;
   varianza: number;
 }
@@ -143,8 +144,7 @@ function TreeNodeRow({
   costeVersion,
   coefK,
   columnWidths,
-  expandLevel,
-  parentNode
+  expandLevel
 }: {
   node: TreeNode;
   level: number;
@@ -153,7 +153,6 @@ function TreeNodeRow({
   coefK: number;
   columnWidths: ColumnWidths;
   expandLevel: number;
-  parentNode?: TreeNode;
 }) {
   const [isExpanded, setIsExpanded] = useState(level < expandLevel);
   const hasChildren = node.children.length > 0;
@@ -170,9 +169,6 @@ function TreeNodeRow({
 
   const isContratoDescomposicion = node.origen === 'Contrato' && contratoTipo === 'Descomposición';
 
-  const isDescompuesto = ['Material', 'Mano de obra', 'Maquinaria', 'Otros'].includes(node.nat);
-  const isPartidaParent = parentNode && parentNode.nat === 'Partida';
-
   let contratoCant = parseFloat((node as any)[`${contratoKey}_cant`]) || 0;
   const contratoCantDescomp = parseFloat((node as any)[`${contratoKey}_cantdescomp`]);
   if (contratoTipo === 'Descompuesto') {
@@ -185,10 +181,6 @@ function TreeNodeRow({
     costeCant = costeCantDescomp || 0;
   }
   const costePrecio = parseFloat((node as any)[`${costeKey}_precio`]) || 0;
-  let costeImporte = parseFloat((node as any)[`${costeKey}_importe`]) || 0;
-  if (costeTipo === 'Descompuesto') {
-    costeImporte = costeCant * costePrecio;
-  }
 
   const contratoPrecio = parseFloat((node as any)[`${contratoKey}_precio`]) || 0;
   let contratoImporte = parseFloat((node as any)[`${contratoKey}_importe`]) || 0;
@@ -291,6 +283,13 @@ function TreeNodeRow({
           {formatNumber(costeImporteK)}
         </td>
 
+        <td
+          className={`py-2 px-3 text-sm text-center font-mono text-slate-600 border-l border-slate-200 ${node.Nota ? 'cursor-help' : ''}`}
+          style={{ width: `${columnWidths.userNumber}px` }}
+          title={node.Nota || ''}
+        >
+          {node.nat === 'Partida' ? Math.round(node.UserNumber) : ''}
+        </td>
         <td className={`py-2 px-3 text-sm text-right font-mono ${shouldShowBlankForDescomposicion ? '' : getDiferenciaColor(difMedicion)}`} style={{ width: `${columnWidths.difMedicion}px` }}>
           {shouldShowBlankForDescomposicion ? '' : formatNumber(difMedicion)}
         </td>
@@ -314,7 +313,6 @@ function TreeNodeRow({
               coefK={coefK}
               columnWidths={columnWidths}
               expandLevel={expandLevel}
-              parentNode={node}
             />
           ))}
         </>
@@ -390,10 +388,10 @@ function ResizableHeader({
   );
 }
 
-type SortColumn = 'contratoImporte' | 'costeImporteK' | 'difMedicion' | 'difImporte' | null;
+type SortColumn = 'contratoImporte' | 'costeImporteK' | 'difMedicion' | 'difImporte' | 'varianza' | null;
 type SortDirection = 'asc' | 'desc' | null;
 
-export default function IntegratedTreeView({ data, analisisVersion, contratoVersion, costeVersion, coefK }: IntegratedTreeViewProps) {
+export default function IntegratedTreeView({ data, contratoVersion, costeVersion, coefK }: IntegratedTreeViewProps) {
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>({
     codigo: 250,
     nat: 80,
@@ -406,6 +404,7 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
     costePrecio: 130,
     costePrecioK: 130,
     costeImporteK: 150,
+    userNumber: 40,
     difMedicion: 130,
     difImporte: 150,
     varianza: 130
@@ -460,6 +459,17 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
         const bCostePrecio = parseFloat((b as any)[`${costeKey}_precio`]) || 0;
         aValue = aContratoImporte - (aCosteCant * aCostePrecio * coefK);
         bValue = bContratoImporte - (bCosteCant * bCostePrecio * coefK);
+      } else if (sortColumn === 'varianza') {
+        const aContratoImporte = parseFloat((a as any)[`${contratoKey}_importe`]) || 0;
+        const bContratoImporte = parseFloat((b as any)[`${contratoKey}_importe`]) || 0;
+        const aCosteCant = parseFloat((a as any)[`${costeKey}_cant`]) || 0;
+        const bCosteCant = parseFloat((b as any)[`${costeKey}_cant`]) || 0;
+        const aCostePrecio = parseFloat((a as any)[`${costeKey}_precio`]) || 0;
+        const bCostePrecio = parseFloat((b as any)[`${costeKey}_precio`]) || 0;
+        const aDifImporte = aContratoImporte - (aCosteCant * aCostePrecio * coefK);
+        const bDifImporte = bContratoImporte - (bCosteCant * bCostePrecio * coefK);
+        aValue = aContratoImporte !== 0 ? (aDifImporte / aContratoImporte) : 0;
+        bValue = bContratoImporte !== 0 ? (bDifImporte / bContratoImporte) : 0;
       }
 
       return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
@@ -529,10 +539,6 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
     }
 
     const costePrecio = parseFloat((item as any)[`${costeKey}_precio`]) || 0;
-    let costeImporte = parseFloat((item as any)[`${costeKey}_importe`]) || 0;
-    if (costeTipo === 'Descompuesto') {
-      costeImporte = costeCant * costePrecio;
-    }
 
     const costeImporteK = costeCant * costePrecio * coefK;
 
@@ -554,7 +560,7 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
     csvContent += 'Nivel;Código;Código 2;Nat.;Descripción;UD;';
     csvContent += `Contrato Cantidad;Contrato Precio;Contrato Importe;`;
     csvContent += `Coste Cantidad;Coste Precio;Coste Precio.K;Coste Importe.K;`;
-    csvContent += `Dif.Medición;Dif.Importe;Varianza %\n`;
+    csvContent += `🔍;Nota;Dif.Medición;Dif.Importe;Varianza %\n`;
 
     const addRowToCSV = (item: AnalisisDetallado) => {
       const contratoTipo = (item as any)[`${contratoKey}_tipo`] || '';
@@ -578,10 +584,6 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
         costeCant = costeCantDescomp || 0;
       }
       const costePrecio = parseFloat((item as any)[`${costeKey}_precio`]) || 0;
-      let costeImporte = parseFloat((item as any)[`${costeKey}_importe`]) || 0;
-      if (costeTipo === 'Descompuesto') {
-        costeImporte = costeCant * costePrecio;
-      }
 
       const costePrecioK = costePrecio * coefK;
       const costeImporteK = costeCant * costePrecioK;
@@ -616,9 +618,9 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
       csvContent += `${formatNumber(costeCant)};${formatNumber(costePrecio)};${formatNumber(costePrecioK)};${formatNumber(costeImporteK)};`;
 
       if (isContratoDescomposicion) {
-        csvContent += `;;`;
+        csvContent += `;;;;`;
       } else {
-        csvContent += `${formatNumber(difMedicion)};${formatNumber(difImporte)};`;
+        csvContent += `${item.nat === 'Partida' ? Math.round(item.UserNumber) : ''};${escapeCsv(item.Nota)};${formatNumber(difMedicion)};${formatNumber(difImporte)};`;
       }
 
       if (isContratoDescomposicion) {
@@ -671,7 +673,7 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
 
     csvContent += `;;;;TOTALES;;;${formatNumber(totalesExport.contrato)};`;
     csvContent += `;;;${formatNumber(totalesExport.costeK)};`;
-    csvContent += `;${formatNumber(diferenciaExport)};${formatNumber(varianzaExport)}\n`;
+    csvContent += `;;;${formatNumber(diferenciaExport)};${formatNumber(varianzaExport)}\n`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -826,10 +828,19 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
               </th>
 
               <ResizableHeader
-                columnKey="difMedicion"
+                columnKey="userNumber"
                 columnWidths={columnWidths}
                 onResize={handleResize}
                 className="py-3 px-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wider border-l border-slate-300"
+                rowSpan={2}
+              >
+                🔍
+              </ResizableHeader>
+              <ResizableHeader
+                columnKey="difMedicion"
+                columnWidths={columnWidths}
+                onResize={handleResize}
+                className="py-3 px-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wider"
                 rowSpan={2}
               >
                 <button
@@ -864,7 +875,14 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
                 className="py-3 px-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wider"
                 rowSpan={2}
               >
-                Varianza %
+                <button
+                  onClick={() => handleSort('varianza')}
+                  className="flex items-center justify-center gap-1 w-full hover:bg-slate-200 rounded px-1"
+                  title="Ordenar por Varianza"
+                >
+                  <span>Varianza %</span>
+                  {getSortIcon('varianza')}
+                </button>
               </ResizableHeader>
             </tr>
             <tr className="border-b border-slate-300">
@@ -974,6 +992,7 @@ export default function IntegratedTreeView({ data, analisisVersion, contratoVers
                   <td className="py-3 px-3 text-sm text-right font-mono font-bold bg-amber-100" style={{ width: `${columnWidths.costeImporteK}px` }}>
                     {formatNumber(totales.costeK)}
                   </td>
+                  <td className="py-3 px-3" style={{ width: `${columnWidths.userNumber}px` }}></td>
                   <td className="py-3 px-3"></td>
                   <td className={`py-3 px-3 text-sm text-right font-mono font-bold ${diferenciaTotales > 0 ? 'text-green-600' : diferenciaTotales < 0 ? 'text-red-600' : 'text-slate-600'}`} style={{ width: `${columnWidths.difImporte}px` }}>
                     {formatNumber(diferenciaTotales)}
