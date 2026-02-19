@@ -415,6 +415,41 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
   const [sortColumn, setSortColumn] = useState<SortColumn>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [showNatFilter, setShowNatFilter] = useState(false);
+  const [descripcionFilter, setDescripcionFilter] = useState<string>('');
+  const [showDescripcionFilter, setShowDescripcionFilter] = useState(false);
+  const [codigoFilter, setCodigoFilter] = useState<string>('');
+  const [showCodigoFilter, setShowCodigoFilter] = useState(false);
+  const [filterPosition, setFilterPosition] = useState<{ top: number, left: number } | null>(null);
+
+  const toggleFilter = (e: React.MouseEvent, type: 'codigo' | 'nat' | 'descripcion') => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setFilterPosition({ top: rect.top, left: rect.left });
+
+    if (type === 'codigo') {
+      setShowCodigoFilter(!showCodigoFilter);
+      setShowNatFilter(false);
+      setShowDescripcionFilter(false);
+    } else if (type === 'nat') {
+      setShowNatFilter(!showNatFilter);
+      setShowCodigoFilter(false);
+      setShowDescripcionFilter(false);
+    } else if (type === 'descripcion') {
+      setShowDescripcionFilter(!showDescripcionFilter);
+      setShowCodigoFilter(false);
+      setShowNatFilter(false);
+    }
+  };
+
+  // Close filters on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowCodigoFilter(false);
+      setShowNatFilter(false);
+      setShowDescripcionFilter(false);
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, []);
 
   const handleResize = (key: keyof ColumnWidths, width: number) => {
     setColumnWidths(prev => ({ ...prev, [key]: width }));
@@ -422,7 +457,14 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
 
   const uniqueNatValues = Array.from(new Set(data.map(item => item.nat).filter(Boolean)));
 
-  const filteredData = natFilter.length === 0 ? data : data.filter(item => natFilter.includes(item.nat));
+  const filteredData = data.filter(item => {
+    const matchesNat = natFilter.length === 0 || natFilter.includes(item.nat);
+    const matchesDescripcion = !descripcionFilter ||
+      (item.resumen || '').toLowerCase().includes(descripcionFilter.toLowerCase());
+    const matchesCodigo = !codigoFilter ||
+      (item.codigo || '').toLowerCase().includes(codigoFilter.toLowerCase());
+    return matchesNat && matchesDescripcion && matchesCodigo;
+  });
 
   const sortedData = [...filteredData];
   if (sortColumn && sortDirection) {
@@ -496,6 +538,8 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
     setSortColumn(null);
     setSortDirection(null);
     setNatFilter([]);
+    setDescripcionFilter('');
+    setCodigoFilter('');
   };
 
   const getSortIcon = (column: SortColumn) => {
@@ -692,8 +736,8 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-      <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-visible relative">
+      <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 relative z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex gap-2">
@@ -737,18 +781,53 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
         </div>
       </div>
 
-      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
-        <table className="border-collapse w-full">
-          <thead className="sticky top-0 bg-slate-100 z-10">
+      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] relative z-20">
+        <table className="border-collapse w-full overflow-visible">
+          <thead className="sticky top-0 bg-slate-100 z-30">
             <tr className="border-b-2 border-slate-300">
               <ResizableHeader
                 columnKey="codigo"
                 columnWidths={columnWidths}
                 onResize={handleResize}
-                className="sticky left-0 bg-slate-100 py-3 px-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider"
+                className="sticky left-0 bg-slate-100 py-3 px-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider relative"
                 rowSpan={2}
               >
-                Código
+                <div className="flex items-center justify-between gap-1">
+                  <span>Código</span>
+                  <button
+                    onClick={(e) => toggleFilter(e, 'codigo')}
+                    className={`hover:bg-slate-200 rounded p-1 ${codigoFilter ? 'text-red-600' : 'text-slate-400'}`}
+                    title="Filtrar por Código"
+                  >
+                    <Filter className="w-3 h-3" />
+                  </button>
+                </div>
+                {showCodigoFilter && filterPosition && (
+                  <div
+                    className="fixed mb-1 bg-white border border-slate-300 rounded shadow-xl z-[9999] min-w-[200px] p-2 normal-case font-normal"
+                    style={{
+                      bottom: `${window.innerHeight - filterPosition.top + 4}px`,
+                      left: `${filterPosition.left}px`
+                    }}
+                  >
+                    <input
+                      type="text"
+                      placeholder="Buscar por código..."
+                      value={codigoFilter}
+                      onChange={(e) => setCodigoFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      autoFocus
+                    />
+                    {codigoFilter && (
+                      <button
+                        onClick={() => { setCodigoFilter(''); setShowCodigoFilter(false); }}
+                        className="mt-2 text-[10px] text-blue-600 hover:text-blue-800 font-medium w-full text-right"
+                      >
+                        Limpiar búsqueda
+                      </button>
+                    )}
+                  </div>
+                )}
               </ResizableHeader>
               <ResizableHeader
                 columnKey="nat"
@@ -760,18 +839,24 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
                 <div className="flex items-center justify-center gap-1">
                   <span>Nat.</span>
                   <button
-                    onClick={() => setShowNatFilter(!showNatFilter)}
-                    className="hover:bg-slate-200 rounded p-1"
+                    onClick={(e) => toggleFilter(e, 'nat')}
+                    className={`hover:bg-slate-200 rounded p-1 ${natFilter.length > 0 ? 'text-red-600' : 'text-slate-400'}`}
                     title="Filtrar por Nat."
                   >
                     <Filter className="w-3 h-3" />
                   </button>
                 </div>
-                {showNatFilter && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-20 min-w-[180px] p-2">
+                {showNatFilter && filterPosition && (
+                  <div
+                    className="fixed mb-1 bg-white border border-slate-300 rounded shadow-xl z-[9999] min-w-[180px] p-2 normal-case font-normal"
+                    style={{
+                      bottom: `${window.innerHeight - filterPosition.top + 4}px`,
+                      left: `${filterPosition.left}px`
+                    }}
+                  >
                     <div className="mb-2 pb-2 border-b border-slate-200">
                       <button
-                        onClick={() => setNatFilter([])}
+                        onClick={() => { setNatFilter([]); setShowNatFilter(false); }}
                         className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                       >
                         Limpiar selección
@@ -804,10 +889,45 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
                 columnKey="descripcion"
                 columnWidths={columnWidths}
                 onResize={handleResize}
-                className="py-3 px-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider"
+                className="py-3 px-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider relative"
                 rowSpan={2}
               >
-                Descripción
+                <div className="flex items-center justify-between gap-1">
+                  <span>Descripción</span>
+                  <button
+                    onClick={(e) => toggleFilter(e, 'descripcion')}
+                    className={`hover:bg-slate-200 rounded p-1 ${descripcionFilter ? 'text-red-600' : 'text-slate-400'}`}
+                    title="Filtrar por Descripción"
+                  >
+                    <Filter className="w-3 h-3" />
+                  </button>
+                </div>
+                {showDescripcionFilter && filterPosition && (
+                  <div
+                    className="fixed mb-1 bg-white border border-slate-300 rounded shadow-xl z-[9999] min-w-[200px] p-2 normal-case font-normal"
+                    style={{
+                      bottom: `${window.innerHeight - filterPosition.top + 4}px`,
+                      left: `${filterPosition.left}px`
+                    }}
+                  >
+                    <input
+                      type="text"
+                      placeholder="Buscar por descripción..."
+                      value={descripcionFilter}
+                      onChange={(e) => setDescripcionFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      autoFocus
+                    />
+                    {descripcionFilter && (
+                      <button
+                        onClick={() => { setDescripcionFilter(''); setShowDescripcionFilter(false); }}
+                        className="mt-2 text-[10px] text-blue-600 hover:text-blue-800 font-medium w-full text-right"
+                      >
+                        Limpiar búsqueda
+                      </button>
+                    )}
+                  </div>
+                )}
               </ResizableHeader>
               <ResizableHeader
                 columnKey="ud"
@@ -1001,6 +1121,101 @@ export default function IntegratedTreeView({ data, contratoVersion, costeVersion
                     {formatNumber(varianzaTotales)}%
                   </td>
                 </tr>
+
+                {/* FILAS DE SUMA FILTRO */}
+                {(() => {
+                  const filterSummaryRows: JSX.Element[] = [];
+
+                  const calculateFilterTotals = (filteredSubset: AnalisisDetallado[], targetNat?: string) => {
+                    return filteredSubset.reduce((acc, item) => {
+                      // Si hay un targetNat, solo sumamos ese. Si no (filtro texto), sumamos todo lo que no sea Capítulo
+                      if (targetNat) {
+                        if (item.nat !== targetNat) return acc;
+                      } else {
+                        if (item.nat === 'Capítulo') return acc;
+                      }
+
+                      const contratoKey = `Contrato_v${contratoVersion}`;
+                      const costeKey = `Coste_v${costeVersion}`;
+
+                      const cTipo = (item as any)[`${contratoKey}_tipo`] || '';
+                      let cCant = parseFloat((item as any)[`${contratoKey}_cant`]) || 0;
+                      if (cTipo === 'Descompuesto') {
+                        cCant = parseFloat((item as any)[`${contratoKey}_cantdescomp`]) || 0;
+                      }
+                      const cPrecio = parseFloat((item as any)[`${contratoKey}_precio`]) || 0;
+                      const cImp = (cTipo === 'Descompuesto') ? (cCant * cPrecio) : (parseFloat((item as any)[`${contratoKey}_importe`]) || 0);
+
+                      const cosTipo = (item as any)[`${costeKey}_tipo`] || '';
+                      let cosCant = parseFloat((item as any)[`${costeKey}_cant`]) || 0;
+                      if (cosTipo === 'Descompuesto') {
+                        cosCant = parseFloat((item as any)[`${costeKey}_cantdescomp`]) || 0;
+                      }
+                      const cosPre = parseFloat((item as any)[`${costeKey}_precio`]) || 0;
+                      const cosImpK = cosCant * cosPre * coefK;
+
+                      return {
+                        contrato: acc.contrato + cImp,
+                        costeK: acc.costeK + cosImpK
+                      };
+                    }, { contrato: 0, costeK: 0 });
+                  };
+
+                  const renderSummaryRow = (label: string, dataSubset: AnalisisDetallado[], key: string, targetNat?: string) => {
+                    const subsetTotals = calculateFilterTotals(dataSubset, targetNat);
+                    const diff = subsetTotals.contrato - subsetTotals.costeK;
+                    const varPct = subsetTotals.contrato !== 0 ? (diff / subsetTotals.contrato) * 100 : 0;
+
+                    if (subsetTotals.contrato === 0 && subsetTotals.costeK === 0) return null;
+
+                    return (
+                      <tr key={key} className="bg-slate-50 border-t border-slate-200 italic">
+                        <td colSpan={4} className="sticky left-0 bg-slate-50 py-2 px-3 text-sm text-slate-700">
+                          {label}
+                        </td>
+                        <td colSpan={2} className="py-2 px-3"></td>
+                        <td className="py-2 px-3 text-sm text-right font-mono text-slate-700 bg-blue-50/50" style={{ width: `${columnWidths.contratoImporte}px` }}>
+                          {formatNumber(subsetTotals.contrato)}
+                        </td>
+                        <td colSpan={3} className="py-2 px-3"></td>
+                        <td className="py-2 px-3 text-sm text-right font-mono text-slate-700 bg-amber-50/50" style={{ width: `${columnWidths.costeImporteK}px` }}>
+                          {formatNumber(subsetTotals.costeK)}
+                        </td>
+                        <td className="py-2 px-3" style={{ width: `${columnWidths.userNumber}px` }}></td>
+                        <td className="py-2 px-3"></td>
+                        <td className={`py-2 px-3 text-sm text-right font-mono ${diff > 0 ? 'text-green-600' : diff < 0 ? 'text-red-600' : 'text-slate-600'}`} style={{ width: `${columnWidths.difImporte}px` }}>
+                          {formatNumber(diff)}
+                        </td>
+                        <td className={`py-2 px-3 text-sm text-right font-mono ${varPct > 0 ? 'text-green-600' : varPct < 0 ? 'text-red-600' : 'text-slate-600'}`} style={{ width: `${columnWidths.varianza}px` }}>
+                          {formatNumber(varPct)}%
+                        </td>
+                      </tr>
+                    );
+                  };
+
+                  // 1. NAT Filters
+                  natFilter.forEach(nat => {
+                    // Pasamos filteredData (que ya tiene los filtros de texto aplicados) o data (solo filtro NAT)?
+                    // El usuario dice "sumando en lineas diferentes... el filtro que se seleccione"
+                    // Sumamos sobre filteredData para que los filtros sean acumulativos
+                    const row = renderSummaryRow(`SUMA FILTRO ${nat}`, filteredData, `nat-${nat}`, nat);
+                    if (row) filterSummaryRows.push(row);
+                  });
+
+                  // 2. CODIGO Filter
+                  if (codigoFilter) {
+                    const row = renderSummaryRow(`SUMA FILTRO CÓDIGO`, filteredData, 'filter-codigo');
+                    if (row) filterSummaryRows.push(row);
+                  }
+
+                  // 3. DESCRIPCION Filter
+                  if (descripcionFilter) {
+                    const row = renderSummaryRow(`SUMA FILTRO DESCRIPCIÓN`, filteredData, 'filter-desc');
+                    if (row) filterSummaryRows.push(row);
+                  }
+
+                  return filterSummaryRows;
+                })()}
               </>
             )}
           </tbody>

@@ -164,11 +164,10 @@ export default function App() {
       }
 
       console.log('📊 Distinct versions received:', data);
-      const uniqueVersions = data && data.length > 0 ? data : [0];
-      console.log('✅ Unique versions found:', uniqueVersions);
+      const uniqueVersions = data && data.length > 0 ? [...data].sort((a, b) => b - a) : [0];
+      console.log('✅ Unique versions found (sorted):', uniqueVersions);
       setAnalisisVersions(uniqueVersions);
-
-      if (uniqueVersions.length > 0 && !uniqueVersions.includes(analisisVersion)) {
+      if (uniqueVersions.length > 0) {
         setAnalisisVersion(uniqueVersions[0]);
       }
     } catch (err) {
@@ -191,18 +190,17 @@ export default function App() {
       }
 
       console.log('📊 Distinct contrato versions received:', data);
-      const uniqueVersions = data && data.length > 0 ? data : [0];
-      console.log('✅ Unique contrato versions found:', uniqueVersions);
+      const uniqueVersions = data && data.length > 0 ? [...data].sort((a, b) => b - a) : [0];
+      console.log('✅ Unique contrato versions found (sorted):', uniqueVersions);
       setContratoVersions(uniqueVersions);
-
-      if (uniqueVersions.length > 0 && !uniqueVersions.includes(contratoVersion)) {
+      if (uniqueVersions.length > 0) {
         setContratoVersion(uniqueVersions[0]);
-      }
-      if (uniqueVersions.length > 0 && !uniqueVersions.includes(contratoVersionComp1)) {
         setContratoVersionComp1(uniqueVersions[0]);
       }
-      if (uniqueVersions.length > 1 && !uniqueVersions.includes(contratoVersionComp2)) {
-        setContratoVersionComp2(uniqueVersions[1] || uniqueVersions[0]);
+      if (uniqueVersions.length > 1) {
+        setContratoVersionComp2(uniqueVersions[1]);
+      } else if (uniqueVersions.length > 0) {
+        setContratoVersionComp2(uniqueVersions[0]);
       }
     } catch (err) {
       console.error('❌ Error loading contrato versions:', err);
@@ -224,18 +222,17 @@ export default function App() {
       }
 
       console.log('📊 Distinct coste versions received:', data);
-      const uniqueVersions = data && data.length > 0 ? data : [0];
-      console.log('✅ Unique coste versions found:', uniqueVersions);
+      const uniqueVersions = data && data.length > 0 ? [...data].sort((a, b) => b - a) : [0];
+      console.log('✅ Unique coste versions found (sorted):', uniqueVersions);
       setCosteVersions(uniqueVersions);
-
-      if (uniqueVersions.length > 0 && !uniqueVersions.includes(costeVersion)) {
+      if (uniqueVersions.length > 0) {
         setCosteVersion(uniqueVersions[0]);
-      }
-      if (uniqueVersions.length > 0 && !uniqueVersions.includes(costeVersionComp1)) {
         setCosteVersionComp1(uniqueVersions[0]);
       }
-      if (uniqueVersions.length > 1 && !uniqueVersions.includes(costeVersionComp2)) {
-        setCosteVersionComp2(uniqueVersions[1] || uniqueVersions[0]);
+      if (uniqueVersions.length > 1) {
+        setCosteVersionComp2(uniqueVersions[1]);
+      } else if (uniqueVersions.length > 0) {
+        setCosteVersionComp2(uniqueVersions[0]);
       }
     } catch (err) {
       console.error('❌ Error loading coste versions:', err);
